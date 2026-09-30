@@ -2,6 +2,60 @@
 
 Zero-dependency Node.js HTTP server (`node:http`) + **PostgreSQL** (`pg` pool, parameterized queries) + `xlsx` for spreadsheet import/export.
 
+## Production deployment (Render + Vercel)
+
+### A. PostgreSQL on Render
+
+1. Render dashboard → **New → PostgreSQL** (name `kaushalsetu-postgres`, version 16, free plan is fine for staging).
+2. Copy the **Internal Database URL** — Render injects it as `DATABASE_URL` when the database is linked to the web service (see `render.yaml`).
+
+### B. Backend on Render (Web Service)
+
+Manual setup (or push `render.yaml` as a Blueprint):
+
+| Setting | Value |
+|---|---|
+| Build Command | `npm install` |
+| Start Command | `npm start` |
+| Pre-Deploy Command | `npm run db:migrate` |
+| Health Check Path | `/api/health` |
+| Node version | 20 (`engines` + `NODE_VERSION=20`) |
+
+Required environment variables on Render:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Linked from `kaushalsetu-postgres` (auto-provided — never paste secrets into code) |
+| `FRONTEND_URL` | `https://<your-app>.vercel.app` |
+| `CORS_ORIGINS` | `https://<your-app>.vercel.app` |
+| `BACKEND_URL` | `https://<your-service>.onrender.com` |
+| `AI_PROVIDER` | `none` (or `openai-compatible` with key below) |
+| `AI_BASE_URL` | e.g. `https://api.groq.com/openai/v1` (only if AI enabled) |
+| `AI_API_KEY` | provider key (secret — Render env only, never `VITE_*`) |
+| `AI_MODEL` | e.g. `llama-3.3-70b-versatile` (only if AI enabled) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | only if Google login is enabled (secret) |
+
+Then seed once (Render Shell): `npm run db:seed`.
+Health check: `GET https://<your-service>.onrender.com/api/health` must return `{"ok":true,"database":{"connected":true,"engine":"postgresql"},…}`.
+
+Notes:
+- The server binds `0.0.0.0` on `$PORT` (Render-assigned).
+- Report files live under `data/reports/` on the instance disk (ephemeral on free plans): generation + download work normally; history entries whose files were recycled return a clear "no longer available, regenerate" message.
+- Google OAuth production callback: `${BACKEND_URL}/api/auth/google/callback` — register exactly this URL in Google Cloud credentials.
+
+### C. Frontend on Vercel
+
+1. Import `kaushalsetu-react/` as the project root (or the monorepo with root directory set).
+2. Framework preset: **Vite**. Build command `npm run build`, output `dist/`.
+3. `vercel.json` (included) rewrites all routes to `/index.html` so React Router works.
+4. Environment variable on Vercel:
+
+| Variable | Value |
+|---|---|
+| `VITE_API_BASE_URL` | `https://<your-service>.onrender.com` (no trailing `/api` needed — both forms work) |
+
+No other `VITE_*` secrets exist. Redeploy after changing env vars (Vite inlines them at build time).
+
 ## 1. Requirements
 
 - Node.js 20+

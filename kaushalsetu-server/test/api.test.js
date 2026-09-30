@@ -145,7 +145,17 @@ test('RBAC: candidate cannot touch government datasets; employer cannot write go
   assert.equal(r.status, 403);
 
   r = await json('GET', '/api/data/jobs', null, candToken);
-  assert.equal(r.status, 403); // another role's private dataset
+  assert.equal(r.status, 200); // read-only aggregate for Opportunities page
+  assert.ok(r.body.writable === false);
+
+  r = await json('POST', '/api/data/jobs', { title: 'X', role: 'Y', openings: 1 }, candToken);
+  assert.equal(r.status, 403); // candidates cannot post jobs
+
+  // cross-role private datasets stay denied
+  r = await json('GET', '/api/data/equipment', null, candToken);
+  assert.equal(r.status, 403); // training-centre private dataset
+  r = await json('GET', '/api/data/candidate_skills', null, govToken);
+  assert.equal(r.status, 200); // government oversight reads (never writes)
 
   // government CAN write skill_demand
   r = await json('POST', '/api/data/skill_demand', { skill: 'Test Skill', district: 'Pune', demand_index: 70, supply: 20, gap: 'High' }, govToken);
@@ -157,6 +167,44 @@ test('RBAC: candidate cannot touch government datasets; employer cannot write go
 
   r = await json('DELETE', `/api/data/skill_demand/${id}`, null, govToken);
   assert.equal(r.status, 200);
+});
+
+test('training-centre equipment + employer validations + submit-requirement persist', async () => {
+  let r = await json('POST', '/api/auth/signup', { name: 'TC Head', email: 'tc@test.in', password: 'secret12' });
+  const tcToken = r.body.token;
+  await json('PUT', '/api/me', { role: 'trainingCentre' }, tcToken);
+
+  r = await json('POST', '/api/data/equipment', { name: 'Test Rig', category: 'EV Lab', required: 2, available: 1 }, tcToken);
+  assert.equal(r.status, 201);
+
+  r = await json('GET', '/api/data/equipment', null, tcToken);
+  assert.ok(r.body.total >= 1);
+
+  // TC can read job aggregates for the Demand page, but cannot post jobs
+  r = await json('GET', '/api/data/jobs', null, tcToken);
+  assert.equal(r.status, 200);
+  assert.ok(r.body.writable === false);
+  r = await json('POST', '/api/data/jobs', { title: 'X', role: 'Y', openings: 1 }, tcToken);
+  assert.equal(r.status, 403);
+
+  r = await json('POST', '/api/auth/signup', { name: 'HR', email: 'hr@test.in', password: 'secret12' });
+  const emToken = r.body.token;
+  await json('PUT', '/api/me', { role: 'employer' }, emToken);
+
+  // submit requirement persists as a job posting
+  r = await json('POST', '/api/data/jobs', { title: 'Test Opening', role: 'Tester', openings: 3, status: 'Open' }, emToken);
+  assert.equal(r.status, 201);
+  const jobId = r.body.record.id;
+  r = await json('GET', '/api/data/jobs', null, emToken);
+  assert.ok(r.body.data.some((j) => j.id === jobId));
+
+  // validation workflow persists
+  r = await json('POST', '/api/data/skill_validations', { skill: 'Test Skill', job_title: 'Tester', status: 'Pending' }, emToken);
+  assert.equal(r.status, 201);
+  const vid = r.body.record.id;
+  r = await json('PUT', `/api/data/skill_validations/${vid}`, { skill: 'Test Skill', job_title: 'Tester', status: 'Validated' }, emToken);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.record.status, 'Validated');
 });
 
 test('candidate CRUD on own skills dataset', async () => {
@@ -237,8 +285,11 @@ test('reports: real PDF + CSV download with stored data', async () => {
 test('stats come from the data layer', async () => {
   const r = await json('GET', '/api/stats/government', null, govToken);
   assert.equal(r.status, 200);
-  assert.ok(r.body.skills.total >= 6);
-  assert.equal(r.body.demo, true); // seed only
+  assert.ok(r.body.skills.total >= 24); // full demo seed
+  assert.ok(r.body.centres.total >= 8);
+  assert.ok(r.body.employerDemand.total >= 16);
+  // earlier tests wrote real rows, so the demo flag is legitimately false here
+  assert.equal(typeof r.body.demo, 'boolean');
 
   const r2 = await json('GET', '/api/stats/government', null, candToken);
   assert.equal(r2.status, 403);

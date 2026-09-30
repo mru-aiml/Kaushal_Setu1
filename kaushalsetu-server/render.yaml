@@ -1,0 +1,44 @@
+# Render blueprint for the KaushalSetu backend + PostgreSQL.
+# Option A (recommended): `render.yaml` is auto-detected — just push and
+# "New → Blueprint" in the Render dashboard, then fill the secrets below.
+# Option B: create the Web Service + PostgreSQL manually with the same values.
+
+services:
+  - type: web
+    name: kaushalsetu-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    preDeployCommand: npm run db:migrate
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kaushalsetu-postgres
+          property: connectionString
+      - key: FRONTEND_URL
+        value: https://kaushalsetu.vercel.app
+      - key: CORS_ORIGINS
+        value: https://kaushalsetu.vercel.app
+      - key: BACKEND_URL
+        value: https://kaushalsetu-server.onrender.com
+      - key: AI_PROVIDER
+        value: none
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: AI_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: llama-3.3-70b-versatile
+
+databases:
+  - name: kaushalsetu-postgres
+    plan: free
+    postgresMajorVersion: "16"

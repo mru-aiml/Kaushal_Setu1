@@ -259,36 +259,79 @@ async function seedCandidates() {
 }
 
 async function seedDemoAccounts() {
+  // Fixed demo_* ids so every demo_* ownership rule + LIKE filter applies
+  // uniformly to documented demo accounts and ephemeral demo sessions.
   const accounts = [
-    { name: 'Demo Government Officer', email: 'demo.govt@kaushalsetu.in', role: 'government', profile: { fullName: 'Demo Government Officer', department: 'Dept. of Skill Development', designation: 'Joint Director', state: 'Maharashtra', district: 'Pune', email: 'demo.govt@kaushalsetu.in', phone: '+912040000001', organization: 'Govt. of Maharashtra (demo)', notifyEmail: 'Enabled', notifySms: 'Disabled' } },
-    { name: 'Demo Centre Head', email: 'demo.tc@kaushalsetu.in', role: 'trainingCentre', profile: { centreName: 'Pune Skill Development Centre', centreId: 'PSD-001', headName: 'Demo Centre Head', email: 'demo.tc@kaushalsetu.in', phone: '+912040000002', state: 'Maharashtra', district: 'Pune', address: 'Bhosari MIDC, Pune (demo)', domains: ['Automotive / EV', 'Manufacturing'], courses: 'EV Technician Fundamentals, CNC Programming', capacity: '420', infrastructure: 'EV lab, CNC hall, 2 classrooms (demo)', trainers: '8 full-time trainers (demo)', accreditation: 'NSQF aligned (demo)' } },
-    { name: 'Demo HR Manager', email: 'demo.emp@kaushalsetu.in', role: 'employer', profile: { companyName: 'Deccan EV Works (demo)', industry: 'Automotive / EV', companySize: '51–200', contactPerson: 'Demo HR Manager', email: 'demo.emp@kaushalsetu.in', phone: '+912040000003', website: 'https://example.in', state: 'Maharashtra', city: 'Pune', address: 'Chakan MIDC, Pune (demo)', hiringDomains: ['Technician', 'Engineering'], requiredSkills: 'EV Diagnostics, Battery Management, CAN Protocol' } },
-    { name: 'Demo Candidate', email: 'demo.cand@kaushalsetu.in', role: 'candidate', profile: { fullName: 'Demo Candidate', email: 'demo.cand@kaushalsetu.in', phone: '+919800000004', state: 'Maharashtra', district: 'Pune', education: 'ITI', degree: 'Electrician', graduationYear: '2023', skills: 'Basic Automotive, Basic electricals', proficiency: 'Beginner', certifications: 'ITI Trade Certificate (demo)', experience: '', preferredIndustry: 'Automotive / EV', preferredRole: 'EV Service Technician', preferredLocation: 'Pune' } },
+    { id: 'demo_govt', name: 'Demo Government Officer', email: 'demo.govt@kaushalsetu.in', role: 'government', profile: { fullName: 'Demo Government Officer', department: 'Dept. of Skill Development', designation: 'Joint Director', state: 'Maharashtra', district: 'Pune', email: 'demo.govt@kaushalsetu.in', phone: '+912040000001', organization: 'Govt. of Maharashtra (demo)', notifyEmail: 'Enabled', notifySms: 'Disabled' } },
+    { id: 'demo_tc', name: 'Demo Centre Head', email: 'demo.tc@kaushalsetu.in', role: 'trainingCentre', profile: { centreName: 'Pune Skill Development Centre', centreId: 'PSD-001', headName: 'Demo Centre Head', email: 'demo.tc@kaushalsetu.in', phone: '+912040000002', state: 'Maharashtra', district: 'Pune', address: 'Bhosari MIDC, Pune (demo)', domains: ['Automotive / EV', 'Manufacturing'], courses: 'EV Technician Fundamentals, CNC Programming', capacity: '420', infrastructure: 'EV lab, CNC hall, 2 classrooms (demo)', trainers: '8 full-time trainers (demo)', accreditation: 'NSQF aligned (demo)' } },
+    { id: 'demo_emp', name: 'Demo HR Manager', email: 'demo.emp@kaushalsetu.in', role: 'employer', profile: { companyName: 'Deccan EV Works (demo)', industry: 'Automotive / EV', companySize: '51–200', contactPerson: 'Demo HR Manager', email: 'demo.emp@kaushalsetu.in', phone: '+912040000003', website: 'https://example.in', state: 'Maharashtra', city: 'Pune', address: 'Chakan MIDC, Pune (demo)', hiringDomains: ['Technician', 'Engineering'], requiredSkills: 'EV Diagnostics, Battery Management, CAN Protocol' } },
+    { id: 'demo_cand', name: 'Demo Candidate', email: 'demo.cand@kaushalsetu.in', role: 'candidate', profile: { fullName: 'Demo Candidate', email: 'demo.cand@kaushalsetu.in', phone: '+919800000004', state: 'Maharashtra', district: 'Pune', education: 'ITI', degree: 'Electrician', graduationYear: '2023', skills: 'Basic Automotive, Basic electricals', proficiency: 'Beginner', certifications: 'ITI Trade Certificate (demo)', experience: '', preferredIndustry: 'Automotive / EV', preferredRole: 'EV Service Technician', preferredLocation: 'Pune' } },
   ];
   for (const a of accounts) {
-    const id = uid('u');
     await pool.query(`INSERT INTO users (id, email, name, password_hash, provider, role, onboarded, created_at)
-      VALUES ($1, $2, $3, $4, 'email', $5, TRUE, $6) ON CONFLICT (email) DO NOTHING`,
-      [id, a.email, a.name, hashPassword('Demo@1234'), a.role, now()]);
+      VALUES ($1, $2, $3, $4, 'email', $5, TRUE, $6) ON CONFLICT (email) DO UPDATE SET name = $3, role = $5, onboarded = TRUE`,
+      [a.id, a.email, a.name, hashPassword('Demo@1234'), a.role, now()]);
     const row = await pool.query('SELECT id FROM users WHERE email = $1', [a.email]);
     const userId = row.rows[0].id;
+    // Migrate any legacy random id to the fixed demo id (one-time).
+    if (userId !== a.id) {
+      await pool.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
+      await pool.query('DELETE FROM profiles WHERE user_id = $1', [userId]);
+      await pool.query('UPDATE reports SET owner = $1 WHERE owner = $2', [a.id, userId]);
+      await pool.query('UPDATE users SET id = $1 WHERE id = $2', [a.id, userId]);
+    }
     await pool.query(`INSERT INTO profiles (user_id, role, data, updated_at) VALUES ($1, $2, $3, $4)
       ON CONFLICT (user_id) DO UPDATE SET role = $2, data = $3, updated_at = $4`,
-      [userId, a.role, JSON.stringify(a.profile), now()]);
+      [a.id, a.role, JSON.stringify(a.profile), now()]);
+  }
+}
+
+async function seedEquipment() {
+  const equipment = [
+    ['EV Battery Diagnostic Rig', 'EV Lab', 5, 1, 82, 'Fair', 'High'],
+    ['1000V HV Safety Kit', 'EV Lab', 6, 2, 70, 'Good', 'High'],
+    ['CAN Bus Analyzer', 'EV Lab', 4, 1, 65, 'Good', 'Medium'],
+    ['5-Axis CNC Trainer', 'Manufacturing', 2, 0, 0, 'Needs Repair', 'High'],
+    ['PLC/SCADA Bench (S7-1200)', 'Automation', 6, 4, 78, 'Good', 'Medium'],
+    ['Solar PV Rooftop Rig (5kW)', 'Renewable', 5, 3, 60, 'Good', 'Medium'],
+    ['Cold-Chain Demo Unit', 'Logistics', 2, 2, 45, 'Good', 'Low'],
+    ['Conventional Lathes', 'Manufacturing', 10, 12, 55, 'Fair', 'Low'],
+    ['Welding Stations', 'Construction', 8, 6, 62, 'Fair', 'Medium'],
+    ['Computer Lab (30 seats)', 'IT', 2, 2, 88, 'Good', 'Low'],
+  ];
+  for (const [name, category, required, available, utilization, condition, priority] of equipment) {
+    await insert('equipment', { name, category, required, available, utilization, condition, priority });
+  }
+  const validations = [
+    ['EV Diagnostics', 'EV Service Technician', 'Validated', '2026-07-12', 'Confirmed against Tata Motors Nexon EV line requirements'],
+    ['Battery Management', 'EV Service Technician', 'Validated', '2026-07-12', 'Confirmed — BMS calibration on live packs'],
+    ['CAN Protocol', 'EV Service Technician', 'Validated', '2026-08-03', 'Confirmed — CAN diagnostics in service bays'],
+    ['EV Safety', 'Battery Technician', 'Pending', null, 'Awaiting HV audit completion'],
+    ['Solar PV Installation', 'Solar PV Installer', 'Validated', '2026-06-20', 'Confirmed — PM Surya Ghar scope'],
+  ];
+  for (const [skill, job_title, status, validated_on, notes] of validations) {
+    await insert('skill_validations', { skill, job_title, status, validated_on, notes });
   }
 }
 
 async function main() {
   const force = process.argv.includes('--force');
   const existing = await pool.query(`SELECT COUNT(*)::INT c FROM skill_demand WHERE owner = 'seed'`);
+  const equipExisting = await pool.query(`SELECT COUNT(*)::INT c FROM equipment WHERE owner = 'seed'`);
   if (existing.rows[0].c > 0 && !force) {
-    console.log('Demo seed already present — skipping (use --force to reseed).');
+    if (equipExisting.rows[0].c === 0) {
+      console.log('Adding equipment + validation seed rows...');
+      await seedEquipment();
+      console.log('Equipment seed complete.');
+    } else {
+      console.log('Demo seed already present — skipping (use --force to reseed).');
+    }
     await closePool();
     return;
   }
   if (force) {
     console.log('Clearing previous seed rows...');
-    const tables = ['skill_demand', 'district_stats', 'training_centres', 'programmes', 'employment_outcomes', 'employer_demands', 'courses', 'batches', 'trainers', 'enrolments', 'placements', 'jobs', 'candidate_skills', 'education', 'certifications', 'experience', 'applications', 'training_history', 'career_recommendations', 'curricula'];
+    const tables = ['skill_demand', 'district_stats', 'training_centres', 'programmes', 'employment_outcomes', 'employer_demands', 'courses', 'batches', 'trainers', 'equipment', 'skill_validations', 'enrolments', 'placements', 'jobs', 'candidate_skills', 'education', 'certifications', 'experience', 'applications', 'training_history', 'career_recommendations', 'curricula'];
     for (const t of tables) await pool.query(`DELETE FROM ${t} WHERE owner = 'seed'`);
   }
   console.log('Seeding skills + districts...');
@@ -297,6 +340,8 @@ async function main() {
   await seedEmployers();
   console.log('Seeding centres + courses + trainers...');
   await seedCentres();
+  console.log('Seeding equipment + validations...');
+  await seedEquipment();
   console.log('Seeding candidates + outcomes...');
   await seedCandidates();
   console.log('Seeding demo accounts...');

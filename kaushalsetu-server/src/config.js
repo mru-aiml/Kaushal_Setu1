@@ -24,6 +24,7 @@ const num = (v, d) => {
 
 export const config = {
   port: num(process.env.PORT, 4000),
+  host: process.env.HOST || '0.0.0.0',
   backendUrl: (process.env.BACKEND_URL || 'http://localhost:4000').replace(/\/$/, ''),
   frontendUrl: (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, ''),
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:4173,http://localhost:4174')

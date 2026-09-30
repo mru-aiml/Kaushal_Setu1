@@ -3,7 +3,9 @@
 //  - 'own'   : users CRUD only rows they own (candidate/training-centre/employer private data)
 //  - 'gov'   : government manages rows (owner = writer); other roles get read-only
 //              access to non-private aggregates where explicitly allowed
-import { ENTITY_NAMES } from './db.js';
+
+const ENTITY_TABLES = ['skill_demand', 'district_stats', 'training_centres', 'programmes', 'employment_outcomes', 'employer_demands', 'courses', 'batches', 'trainers', 'enrolments', 'placements', 'equipment', 'skill_validations', 'jobs', 'candidate_skills', 'education', 'certifications', 'experience', 'applications', 'training_history'];
+export const ENTITY_NAMES = ENTITY_TABLES;
 
 const F = (name, type = 'text', required = false, options = null) => ({ name, type, required, options });
 
@@ -20,6 +22,8 @@ export const ENTITIES = {
   trainers: { label: 'Trainers', access: 'own', roles: ['trainingCentre'], fields: [F('name', 'text', true), F('trade'), F('certification'), F('score', 'number'), F('status', 'select', false, ['Active', 'Upskilling', 'Inactive'])] },
   enrolments: { label: 'Enrolments', access: 'own', roles: ['trainingCentre'], fields: [F('student', 'text', true), F('course', 'text', true), F('batch_code'), F('status', 'select', false, ['Enrolled', 'Completed', 'Dropped']), F('enrolled_on', 'date')] },
   placements: { label: 'Placements & Outcomes', access: 'own', roles: ['trainingCentre'], fields: [F('student', 'text', true), F('course'), F('employer'), F('salary', 'number'), F('placed_on', 'date')] },
+  equipment: { label: 'Equipment & Infrastructure', access: 'own', roles: ['trainingCentre'], fields: [F('name', 'text', true), F('category'), F('required', 'number'), F('available', 'number'), F('utilization', 'number'), F('condition', 'select', false, ['Good', 'Fair', 'Needs Repair']), F('priority', 'select', false, ['High', 'Medium', 'Low'])] },
+  skill_validations: { label: 'Skill Validations', access: 'own', roles: ['employer'], fields: [F('skill', 'text', true), F('job_title'), F('status', 'select', false, ['Pending', 'Validated', 'Rejected']), F('validated_on', 'date'), F('notes')] },
   jobs: { label: 'Job Openings', access: 'own', roles: ['employer'], fields: [F('title', 'text', true), F('role', 'text', true), F('industry'), F('skills'), F('experience'), F('location'), F('salary_min', 'number'), F('salary_max', 'number'), F('openings', 'number', true), F('status', 'select', false, ['Open', 'Paused', 'Closed'])] },
   candidate_skills: { label: 'Skills', access: 'own', roles: ['candidate'], fields: [F('skill', 'text', true), F('proficiency', 'select', true, ['Beginner', 'Intermediate', 'Advanced', 'Expert']), F('years', 'number')] },
   education: { label: 'Education', access: 'own', roles: ['candidate'], fields: [F('level', 'select', true, ['10th', '12th', 'ITI', 'Diploma', 'UG', 'PG', 'Other']), F('degree', 'text', true), F('institute'), F('year', 'number')] },
@@ -36,16 +40,16 @@ for (const n of ENTITY_NAMES) {
 // Entities each role may manage in its Data workspace.
 export const ROLE_ENTITIES = {
   government: ['skill_demand', 'district_stats', 'training_centres', 'programmes', 'employment_outcomes', 'employer_demands'],
-  trainingCentre: ['courses', 'batches', 'trainers', 'enrolments', 'placements'],
-  employer: ['jobs'],
+  trainingCentre: ['courses', 'batches', 'trainers', 'equipment', 'enrolments', 'placements'],
+  employer: ['jobs', 'skill_validations'],
   candidate: ['candidate_skills', 'education', 'certifications', 'experience', 'applications', 'training_history'],
 };
 
 // Read-only aggregate access for non-owning roles (dashboards, career matching).
 export const READABLE = {
-  trainingCentre: ['skill_demand'],
+  trainingCentre: ['skill_demand', 'jobs'],
   employer: ['skill_demand'],
-  candidate: ['skill_demand', 'jobs'],
+  candidate: ['skill_demand', 'jobs', 'courses', 'training_centres'],
   government: Object.keys(ENTITIES),
 };
 
@@ -55,7 +59,9 @@ export function canRead(entity, user) {
   if (def.access === 'gov') return true; // aggregates are readable platform-wide
   if (def.access === 'own') {
     if (user.role === 'government') return true; // oversight reads
-    return (def.roles || []).includes(user.role); // owners read own rows (filtered)
+    if ((def.roles || []).includes(user.role)) return true; // owners (+own rows filter)
+    // Cross-role aggregate reads (seed + shared rows only, enforced by visibility filter)
+    if ((READABLE[user.role] || []).includes(entity)) return true;
   }
   return false;
 }

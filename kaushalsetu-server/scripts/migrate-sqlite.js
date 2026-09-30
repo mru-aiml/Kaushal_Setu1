@@ -16,6 +16,8 @@ const TABLES = [
   'career_recommendations', 'curricula', 'reports',
 ];
 
+const CONFLICT_COL = { sessions: 'token', oauth_grants: 'code', profiles: 'user_id' };
+
 const norm = (v) => {
   if (v === undefined) return null;
   if (typeof v === 'number' && (v === 0 || v === 1)) return v; // keep; pg coerces to boolean
@@ -56,9 +58,10 @@ async function main() {
       const cols = Object.keys(row);
       const vals = cols.map((c) => pgValue(c, row[c]));
       const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+      const conflict = CONFLICT_COL[table] || 'id';
       try {
         const r = await pool.query(
-          `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) ON CONFLICT (id) DO NOTHING`,
+          `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) ON CONFLICT (${conflict}) DO NOTHING`,
           vals
         );
         if (r.rowCount > 0) inserted++;

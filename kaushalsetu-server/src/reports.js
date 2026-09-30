@@ -53,9 +53,12 @@ export function reportRoles(type) {
 }
 
 // Demo-owned rows never leak into shared aggregates: real users see seed +
-// real rows; demo users see seed + their own rows only.
+// real rows; demo users (sessions + documented demo accounts) see seed +
+// their own rows only.
+const DEMO_ACCOUNT = /^demo\.(govt|tc|emp|cand)@kaushalsetu\.in$/i;
+const isDemoUser = (u) => String(u.id).startsWith('demo_') || u.provider === 'demo' || DEMO_ACCOUNT.test(u.email || '');
 function visClause(user) {
-  if (String(user.id).startsWith('demo_') || user.provider === 'demo') {
+  if (isDemoUser(user)) {
     return { clause: ` AND (owner = ? OR owner = 'seed')`, params: [user.id] };
   }
   return { clause: ` AND owner NOT LIKE 'demo\\_%' ESCAPE '\\'`, params: [] };
@@ -84,6 +87,15 @@ async function getProfileRow(userId) {
   const row = await get('SELECT * FROM profiles WHERE user_id = $1', [userId]);
   if (!row) return null;
   return { ...row, data: typeof row.data === 'string' ? JSON.parse(row.data || '{}') : (row.data || {}) };
+}
+
+// Owner scope for private datasets: demo sessions see seed + own rows,
+// real users see only their own rows.
+function ownScope(user) {
+  if (isDemoUser(user)) {
+    return { clause: `owner IN (?, 'seed')`, params: [user.id] };
+  }
+  return { clause: `owner = ?`, params: [user.id] };
 }
 
 // Build { head, rows, summary[], tables? } from REAL stored data.
@@ -172,11 +184,12 @@ async function buildDataset(type, user, filters = {}) {
     case 'tc-enrolments':
     case 'tc-completion':
     case 'tc-placements': {
-      const own = `WHERE owner = ?`;
-      const courses = await rows('courses', own, [user.id]);
-      const batches = await rows('batches', own, [user.id]);
-      const enr = await rows('enrolments', own, [user.id]);
-      const plc = await rows('placements', own, [user.id]);
+      const sc = ownScope(user);
+      const own = `WHERE ${sc.clause}`;
+      const courses = await rows('courses', own, sc.params);
+      const batches = await rows('batches', own, sc.params);
+      const enr = await rows('enrolments', own, sc.params);
+      const plc = await rows('placements', own, sc.params);
       const seats = batches.reduce((a, b) => a + (b.seats || 0), 0);
       const enrolled = batches.reduce((a, b) => a + (b.enrolled || 0), 0);
       const map = {
@@ -193,7 +206,8 @@ async function buildDataset(type, user, filters = {}) {
     case 'em-hiring':
     case 'em-skills':
     case 'em-open': {
-      const j = await rows('jobs', 'WHERE owner = ?', [user.id]);
+      const sc = ownScope(user);
+      const j = await rows('jobs', `WHERE ${sc.clause}`, sc.params);
       const open = j.filter((x) => x.status === 'Open');
       const map = {
         'em-hiring': { head: ['Title', 'Role', 'Location', 'Openings', 'Status'], rows: j.map((x) => [x.title, x.role, x.location, x.openings, x.status]), summary: [`${j.length} postings · ${open.reduce((a, x) => a + (x.openings || 0), 0)} open positions`] },
@@ -208,9 +222,10 @@ async function buildDataset(type, user, filters = {}) {
     case 'ca-training': {
       const prof = await getProfileRow(user.id);
       const pdata = prof ? prof.data : {};
-      const skills = await rows('candidate_skills', 'WHERE owner = ?', [user.id]);
-      const edu = await rows('education', 'WHERE owner = ?', [user.id]);
-      const cert = await rows('certifications', 'WHERE owner = ?', [user.id]);
+      const sc = ownScope(user);
+      const skills = await rows('candidate_skills', `WHERE ${sc.clause}`, sc.params);
+      const edu = await rows('education', `WHERE ${sc.clause}`, sc.params);
+      const cert = await rows('certifications', `WHERE ${sc.clause}`, sc.params);
       const demand = await rows('skill_demand', '');
       if (type === 'ca-profile') {
         return {

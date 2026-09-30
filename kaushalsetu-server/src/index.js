@@ -61,7 +61,11 @@ function cors(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
-const isDemoUser = (u) => !u ? false : (u.provider === 'demo' || String(u.id).startsWith('demo_'));
+// Documented demo accounts (demo.*@kaushalsetu.in) and ephemeral demo sessions
+// are sandboxed exactly like demo workspaces: shared seed rows are visible,
+// their own writes never leak into real aggregates.
+const DEMO_ACCOUNT = /^demo\.(govt|tc|emp|cand)@kaushalsetu\.in$/i;
+const isDemoUser = (u) => !u ? false : (u.provider === 'demo' || String(u.id).startsWith('demo_') || DEMO_ACCOUNT.test(u.email || ''));
 
 // Shared-dataset visibility: demo-owned rows are visible only to their owner.
 // Seed rows (owner 'seed') and real rows are visible per role rules.
@@ -77,8 +81,23 @@ async function rowById(entity, id) {
 function assertRowWritable(entity, row, user) {
   if (!row) return 'Record not found';
   if (!canWrite(entity, user)) return 'Access restricted for this dataset';
+  // Demo sessions work on their own copies: shared seed rows are read-only.
+  if (isDemoUser(user) && row.owner === 'seed') {
+    return 'Demo sessions cannot modify shared demonstration rows — add your own record instead';
+  }
   if (ENTITIES[entity].access === 'own' && row.owner !== user.id) return 'You can only modify your own records';
   return null;
+}
+
+// Demo sessions see seed rows alongside their own (sandbox view); owners see
+// their own rows; cross-role aggregate reads fall through to visibility().
+function ownerFilter(entity, user) {
+  const def = ENTITIES[entity];
+  if (def.access === 'own' && user.role !== 'government' && (def.roles || []).includes(user.role)) {
+    if (isDemoUser(user)) return { clause: `owner IN ($1, 'seed')`, params: [user.id] };
+    return { clause: `owner = $1`, params: [user.id] };
+  }
+  return null; // shared dataset or cross-role read → visibility() applies
 }
 
 const routes = [];
@@ -331,13 +350,13 @@ route('GET', '/api/data/:entity', async (req, res, params, _b, query) => {
   if (!ENTITIES[entity]) return send(res, 404, { error: 'Unknown dataset.' });
   if (!canRead(entity, user)) return send(res, 403, { error: 'Access restricted for this dataset.' });
   const vis = visibility(user);
-  const ownScoped = ENTITIES[entity].access === 'own' && user.role !== 'government';
+  const scoped = ownerFilter(entity, user);
   // Build positional params in order.
   const parts = [];
   const p = [];
-  if (ownScoped) {
-    parts.push(`owner = $${p.length + 1}`);
-    p.push(user.id);
+  if (scoped) {
+    parts.push(scoped.clause.replace('$1', `$${p.length + 1}`));
+    p.push(...scoped.params);
   } else if (vis.params.length) {
     parts.push(`(owner = $${p.length + 1} OR owner = 'seed')`);
     p.push(...vis.params);
@@ -412,9 +431,10 @@ route('GET', '/api/data/:entity/export', async (req, res, params, _b, query) => 
   const vis = visibility(user);
   let where;
   let wp;
-  if (ENTITIES[entity].access === 'own' && user.role !== 'government') {
-    where = 'WHERE owner = $1';
-    wp = [user.id];
+  const scoped = ownerFilter(entity, user);
+  if (scoped) {
+    where = `WHERE ${scoped.clause}`;
+    wp = scoped.params;
   } else if (vis.params.length) {
     where = `WHERE (owner = $1 OR owner = 'seed')`;
     wp = vis.params;
@@ -531,11 +551,12 @@ route('POST', '/api/import/resume', async (req, res, _p, body) => {
 // ---------------- AI ----------------
 async function candidateInput(user) {
   const prof = await get('SELECT * FROM profiles WHERE user_id = $1', [user.id]);
-  const own = 'WHERE owner = $1';
-  const skills = await all(`SELECT skill, proficiency, years FROM candidate_skills ${own}`, [user.id]);
-  const education = await all(`SELECT level, degree, institute, year FROM education ${own}`, [user.id]);
-  const certs = await all(`SELECT name, issuer, year FROM certifications ${own}`, [user.id]);
-  const exp = await all(`SELECT title, company, years, description FROM experience ${own}`, [user.id]);
+  const demo = isDemoUser(user);
+  const sc = demo ? `owner IN ($1, 'seed')` : `owner = $1`;
+  const skills = await all(`SELECT skill, proficiency, years FROM candidate_skills WHERE ${sc}`, [user.id]);
+  const education = await all(`SELECT level, degree, institute, year FROM education WHERE ${sc}`, [user.id]);
+  const certs = await all(`SELECT name, issuer, year FROM certifications WHERE ${sc}`, [user.id]);
+  const exp = await all(`SELECT title, company, years, description FROM experience WHERE ${sc}`, [user.id]);
   const market = await all(`SELECT skill, sector, district, demand_index, gap, trend FROM skill_demand WHERE owner NOT LIKE 'demo\\_%' ESCAPE '\\' ORDER BY demand_index DESC LIMIT 20`);
   const jobs = await all(`SELECT title, role, industry, skills, experience, location, salary_min, salary_max, openings FROM jobs WHERE status = 'Open' AND owner NOT LIKE 'demo\\_%' ESCAPE '\\' LIMIT 20`);
   const pdata = prof?.data;
@@ -701,9 +722,9 @@ route('GET', '/api/stats/:role', async (req, res, params) => {
   if (params.role !== user.role) return send(res, 403, { error: 'Access restricted.' });
   const map = {
     government: await governmentStats(user),
-    trainingCentre: await trainingCentreStats(user.id),
-    employer: await employerStats(user.id),
-    candidate: await candidateStats(user.id),
+    trainingCentre: await trainingCentreStats(user),
+    employer: await employerStats(user),
+    candidate: await candidateStats(user),
   };
   send(res, 200, map[params.role] || {});
 });
@@ -740,7 +761,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(config.port, () => {
+server.listen(config.port, config.host, () => {
   // eslint-disable-next-line no-console
-  console.log(`KAUSHALSETU API listening on :${config.port} (PostgreSQL, AI: ${config.aiProvider}, Google: ${googleConfigured() ? 'configured' : 'not configured'})`);
+  console.log(`KAUSHALSETU API listening on ${config.host}:${config.port} (PostgreSQL, AI: ${config.aiProvider}, Google: ${googleConfigured() ? 'configured' : 'not configured'})`);
 });

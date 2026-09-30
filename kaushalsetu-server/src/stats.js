@@ -14,7 +14,7 @@ const sum = async (table, col, where = '', params = []) =>
 
 function demoScope(user, idx = 1) {
   if (!user) return { clause: '', params: [] };
-  if (String(user.id).startsWith('demo_') || user.provider === 'demo') {
+  if (String(user.id).startsWith('demo_') || user.provider === 'demo' || DEMO_ACCOUNT.test(user.email || '')) {
     return { clause: `AND (owner = $${idx} OR owner = 'seed')`, params: [user.id] };
   }
   return { clause: `AND owner NOT LIKE 'demo\\_%' ESCAPE '\\'`, params: [] };
@@ -42,14 +42,24 @@ export async function governmentStats(user) {
   };
 }
 
-export async function trainingCentreStats(userId) {
-  const own = 'WHERE owner = $1';
-  const courses = await stats('courses', own, [userId]);
-  const review = (await get(`SELECT COUNT(*)::INT c FROM courses ${own} AND status != 'Aligned'`, [userId])).c;
-  const batches = await all(`SELECT * FROM batches ${own}`, [userId]);
-  const trainers = await all(`SELECT * FROM trainers ${own}`, [userId]);
-  const enr = await stats('enrolments', own, [userId]);
-  const plc = await stats('placements', own, [userId]);
+function ownScope(userId, isDemo) {
+  if (isDemo) return { clause: `owner IN ($1, 'seed')`, params: [userId] };
+  return { clause: `owner = $1`, params: [userId] };
+}
+
+const DEMO_ACCOUNT = /^demo\.(govt|tc|emp|cand)@kaushalsetu\.in$/i;
+const isDemo = (u) => u && (String(u.id || u).startsWith('demo_') || u.provider === 'demo' || DEMO_ACCOUNT.test(u.email || ''));
+
+export async function trainingCentreStats(user) {
+  const userId = typeof user === 'string' ? user : user.id;
+  const sc = ownScope(userId, isDemo(user));
+  const own = `WHERE ${sc.clause}`;
+  const courses = await stats('courses', own, sc.params);
+  const review = (await get(`SELECT COUNT(*)::INT c FROM courses ${own} AND status != 'Aligned'`, sc.params)).c;
+  const batches = await all(`SELECT * FROM batches ${own}`, sc.params);
+  const trainers = await all(`SELECT * FROM trainers ${own}`, sc.params);
+  const enr = await stats('enrolments', own, sc.params);
+  const plc = await stats('placements', own, sc.params);
   const seats = batches.reduce((a, b) => a + (b.seats || 0), 0);
   const enrolled = batches.reduce((a, b) => a + (b.enrolled || 0), 0);
   return {
@@ -63,8 +73,10 @@ export async function trainingCentreStats(userId) {
   };
 }
 
-export async function employerStats(userId) {
-  const jobs = await all('SELECT * FROM jobs WHERE owner = $1', [userId]);
+export async function employerStats(user) {
+  const userId = typeof user === 'string' ? user : user.id;
+  const sc = ownScope(userId, isDemo(user));
+  const jobs = await all(`SELECT * FROM jobs WHERE ${sc.clause}`, sc.params);
   const open = jobs.filter((j) => j.status === 'Open');
   return {
     demo: jobs.length > 0 && jobs.every((j) => j.is_demo),
@@ -75,12 +87,15 @@ export async function employerStats(userId) {
   };
 }
 
-export async function candidateStats(userId) {
-  const skills = await all('SELECT * FROM candidate_skills WHERE owner = $1', [userId]);
-  const edu = await all('SELECT * FROM education WHERE owner = $1', [userId]);
-  const cert = await all('SELECT * FROM certifications WHERE owner = $1', [userId]);
-  const exp = await all('SELECT * FROM experience WHERE owner = $1', [userId]);
-  const apps = await all('SELECT * FROM applications WHERE owner = $1', [userId]);
+export async function candidateStats(user) {
+  const userId = typeof user === 'string' ? user : user.id;
+  const sc = ownScope(userId, isDemo(user));
+  const own = `WHERE ${sc.clause}`;
+  const skills = await all(`SELECT * FROM candidate_skills ${own}`, sc.params);
+  const edu = await all(`SELECT * FROM education ${own}`, sc.params);
+  const cert = await all(`SELECT * FROM certifications ${own}`, sc.params);
+  const exp = await all(`SELECT * FROM experience ${own}`, sc.params);
+  const apps = await all(`SELECT * FROM applications ${own}`, sc.params);
   const prof = await get('SELECT user_id FROM profiles WHERE user_id = $1', [userId]);
   return {
     empty: skills.length + edu.length + cert.length + exp.length === 0 && !prof,

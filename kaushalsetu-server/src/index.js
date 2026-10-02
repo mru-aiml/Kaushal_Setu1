@@ -50,70 +50,25 @@ function readBody(req) {
   });
 }
 
-const app = express();
-
-app.use(express.json());
-
 function cors(req, res) {
   const origin = req.headers.origin;
 
   if (origin && config.corsOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.setHeader('Access-Control-Allow-Origin', config.frontendUrl);
-  }
-
-  res.setHeader('Vary', 'Origin');
-  res.setHeader(
-    'Access-Control-Allow-Methods',
-    'GET, POST, PUT, DELETE, OPTIONS'
-  );
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization'
-  );
-}
-
-const server = http.createServer(async (req, res) => {
-  cors(req, res);
-
-  // Handle browser CORS preflight request
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204;
-    res.end();
-    return;
-  }
-
- // Your existing code continues here...
-
-// ===============================
-// CORS — PUT THIS BEFORE ROUTES
-// ===============================
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-
-  if (origin && config.corsOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
   }
 
   res.setHeader('Vary', 'Origin');
 
   res.setHeader(
     'Access-Control-Allow-Methods',
-    'GET, POST, PUT, DELETE, OPTIONS'
+    'GET, POST, PUT, PATCH, DELETE, OPTIONS'
   );
 
   res.setHeader(
     'Access-Control-Allow-Headers',
     'Content-Type, Authorization'
   );
-
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
-  }
-
-  next();
-});
+}
 
 
 // Documented demo accounts (demo.*@kaushalsetu.in) and ephemeral demo sessions
@@ -785,38 +740,66 @@ route('GET', '/api/stats/:role', async (req, res, params) => {
 });
 
 // ---------------- server ----------------
+// ---------------- server ----------------
+
 const server = http.createServer(async (req, res) => {
   cors(req, res);
+
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
     return;
   }
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+  const url = new URL(
+    req.url,
+    `http://${req.headers.host || 'localhost'}`
+  );
+
   const found = matchRoute(req.method, url.pathname);
+
   if (!found) {
     send(res, 404, { error: 'Unknown endpoint.' });
     return;
   }
+
   let body = {};
+
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     try {
       body = await readBody(req);
     } catch (e) {
-      send(res, e.status || 400, { error: e.message });
+      send(res, e.status || 400, {
+        error: e.message
+      });
       return;
     }
   }
+
   try {
-    await found.handler(req, res, found.params, body, url.searchParams);
+    await found.handler(
+      req,
+      res,
+      found.params,
+      body,
+      url.searchParams
+    );
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error('API error:', e);
-    if (!res.writableEnded) send(res, 500, { error: 'Internal server error.' });
+
+    if (!res.writableEnded) {
+      send(res, 500, {
+        error: 'Internal server error.'
+      });
+    }
   }
 });
 
 server.listen(config.port, config.host, () => {
-  // eslint-disable-next-line no-console
-  console.log(`KAUSHALSETU API listening on ${config.host}:${config.port} (PostgreSQL, AI: ${config.aiProvider}, Google: ${googleConfigured() ? 'configured' : 'not configured'})`);
+  console.log(
+    `KAUSHALSETU API listening on ${config.host}:${config.port} ` +
+    `(PostgreSQL, AI: ${config.aiProvider}, ` +
+    `Google: ${googleConfigured() ? 'configured' : 'not configured'})`
+  );
 });

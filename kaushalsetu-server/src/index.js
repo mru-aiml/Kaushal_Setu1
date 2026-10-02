@@ -49,17 +49,48 @@ function readBody(req) {
   });
 }
 
-function cors(req, res) {
+const app = express();
+
+app.use(express.json());
+
+
+// ===============================
+// CORS — PUT THIS BEFORE ROUTES
+// ===============================
+app.use((req, res, next) => {
   const origin = req.headers.origin;
+
   if (origin && config.corsOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (!origin) {
-    res.setHeader('Access-Control-Allow-Origin', config.frontendUrl);
   }
+
   res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-}
+
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, DELETE, OPTIONS'
+  );
+
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization'
+  );
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
+
+// ===============================
+// YOUR API ROUTES
+// ===============================
+
+app.use('/api/data', dataRoutes);
+app.use('/api/programmes', programmeRoutes);
+app.use('/api/training_centres', trainingCentreRoutes);
 
 // Documented demo accounts (demo.*@kaushalsetu.in) and ephemeral demo sessions
 // are sandboxed exactly like demo workspaces: shared seed rows are visible,

@@ -27,8 +27,10 @@ export const config = {
   host: process.env.HOST || '0.0.0.0',
   backendUrl: (process.env.BACKEND_URL || 'https://kaushalsetu-backend-xyyv.onrender.com').replace(/\/$/, ''),
   frontendUrl: (process.env.FRONTEND_URL || 'https://kaushalsetu1.vercel.app').replace(/\/$/, ''),
-  corsOrigins: (process.env.CORS_ORIGINS ||"")
-    .split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean),
+  corsOrigins: (process.env.CORS_ORIGINS || "")
+  .split(',')
+  .map(s => s.trim().replace(/\/$/, ''))
+  .filter(Boolean),
   sessionDays: num(process.env.SESSION_DAYS, 30),
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',

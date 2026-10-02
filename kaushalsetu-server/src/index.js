@@ -1,6 +1,7 @@
 // KAUSHALSETU backend API (Phase 3). Zero-dependency HTTP server + PostgreSQL.
 // Conventions: JSON in/out, Bearer sessions, server-side RBAC on every route.
 import http from 'node:http';
+import express from 'express';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import XLSX from 'xlsx';

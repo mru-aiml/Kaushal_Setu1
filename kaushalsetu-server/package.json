@@ -16,6 +16,7 @@
     "db:migrate:sqlite": "node scripts/migrate-sqlite.js"
   },
   "dependencies": {
+    "express": "^4.22.3",
     "pg": "^8.23.0",
     "xlsx": "^0.18.5"
   }

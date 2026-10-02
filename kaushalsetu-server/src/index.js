@@ -54,6 +54,31 @@ const app = express();
 
 app.use(express.json());
 
+function cors(req, res) {
+  const origin = req.headers.origin;
+
+  if (origin && config.corsOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    res.setHeader('Access-Control-Allow-Origin', config.frontendUrl);
+  }
+
+  res.setHeader('Vary', 'Origin');
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, DELETE, OPTIONS'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization'
+  );
+}
+
+if (req.method === 'OPTIONS') {
+  res.statusCode = 204;
+  res.end();
+  return;
+}
 
 // ===============================
 // CORS — PUT THIS BEFORE ROUTES

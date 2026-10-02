@@ -2,6 +2,7 @@
 // Conventions: JSON in/out, Bearer sessions, server-side RBAC on every route.
 import http from 'node:http';
 import express from 'express';
+import cors from "cors";
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import XLSX from 'xlsx';
@@ -21,6 +22,41 @@ import { parseFile, validateImport, extractResume, extOf } from './import.js';
 import { aiStatus, careerRecommendations, generateCurriculum, validateCareerResult, validateCurriculumResult } from './ai.js';
 import { REPORT_CATALOG, generateReport, getReport, reportPath, mimeFor } from './reports.js';
 import { governmentStats, trainingCentreStats, employerStats, candidateStats } from './stats.js';
+
+
+const app = express();
+
+const allowedOrigins = [
+  "https://kaushalsetu1.vercel.app"
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
+  })
+);
+
+app.options(/.*/, cors({
+  origin: "https://kaushalsetu1.vercel.app",
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
+
+app.use(express.json());
 
 const MAX_BODY = () => config.maxUploadBytes + 1024 * 1024;
 
@@ -50,25 +86,7 @@ function readBody(req) {
   });
 }
 
-function cors(req, res) {
-  const origin = req.headers.origin;
 
-  if (origin && config.corsOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-
-  res.setHeader('Vary', 'Origin');
-
-  res.setHeader(
-    'Access-Control-Allow-Methods',
-    'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-  );
-
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization'
-  );
-}
 
 
 // Documented demo accounts (demo.*@kaushalsetu.in) and ephemeral demo sessions

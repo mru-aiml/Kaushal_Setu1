@@ -20,11 +20,11 @@ services:
           name: kaushalsetu-postgres
           property: connectionString
       - key: FRONTEND_URL
-        value: https://kaushalsetu.vercel.app
+        value: https://kaushalsetu1.vercel.app
       - key: CORS_ORIGINS
-        value: https://kaushalsetu.vercel.app
+        value: https://kaushalsetu1.vercel.app
       - key: BACKEND_URL
-        value: https://kaushalsetu-server.onrender.com
+        value: https://kaushalsetu-backend-xyyv.onrender.com
       - key: AI_PROVIDER
         value: none
       - key: GOOGLE_CLIENT_ID

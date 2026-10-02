@@ -85,14 +85,6 @@ app.use((req, res, next) => {
 });
 
 
-// ===============================
-// YOUR API ROUTES
-// ===============================
-
-app.use('/api/data', dataRoutes);
-app.use('/api/programmes', programmeRoutes);
-app.use('/api/training_centres', trainingCentreRoutes);
-
 // Documented demo accounts (demo.*@kaushalsetu.in) and ephemeral demo sessions
 // are sandboxed exactly like demo workspaces: shared seed rows are visible,
 // their own writes never leak into real aggregates.

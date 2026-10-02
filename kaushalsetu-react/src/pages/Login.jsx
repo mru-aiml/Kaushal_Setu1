@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ArrowRight, ArrowLeft, Loader2 } from 'lucide-react';
+import { SignInButton, SignUpButton } from '@clerk/react';
 import { authService } from '../auth/authService';
 import { useSession } from '../auth/AuthContext';
+import { clerkAvailable } from '../auth/clerk';
 import { ROLE_CONFIG } from '../data/roles';
 
 function GoogleIcon() {
@@ -105,6 +107,19 @@ export default function Login() {
           {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in…</> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
         </button>
         <div className="flex items-center gap-3 my-4"><span className="flex-1 h-px bg-slate-200" /><span className="text-[11px] font-bold text-slate-400 uppercase">or</span><span className="flex-1 h-px bg-slate-200" /></div>
+        {clerkAvailable() && (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <SignInButton mode="modal">
+                <button type="button" className="btn-p w-full justify-center !py-3">Sign In with Clerk</button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button type="button" className="btn-g w-full justify-center !py-3">Sign Up with Clerk</button>
+              </SignUpButton>
+            </div>
+            <div className="flex items-center gap-3 my-4"><span className="flex-1 h-px bg-slate-200" /><span className="text-[11px] font-bold text-slate-400 uppercase">or</span><span className="flex-1 h-px bg-slate-200" /></div>
+          </>
+        )}
         <button type="button" onClick={google} disabled={googleBusy || googleDisabled} title={googleDisabled ? 'Google sign-in needs the backend API with Google credentials configured' : 'Sign in with your Google account'} className="btn-g w-full justify-center !py-3 disabled:opacity-60">
           {googleBusy ? <><Loader2 className="w-4 h-4 animate-spin" /> Redirecting to Google…</> : <><GoogleIcon /> Continue with Google</>}
         </button>

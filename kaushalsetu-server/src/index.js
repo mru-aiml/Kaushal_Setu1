@@ -1,8 +1,9 @@
-// KAUSHALSETU backend API (Phase 3). Zero-dependency HTTP server + PostgreSQL.
+// KAUSHALSETU backend API. Express + cors package + PostgreSQL.
 // Conventions: JSON in/out, Bearer sessions, server-side RBAC on every route.
-import http from 'node:http';
+// There is exactly ONE CORS implementation (below). Route handlers use the
+// internal route() registry; Express provides transport + CORS + preflight.
 import express from 'express';
-import cors from "cors";
+import cors from 'cors';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import XLSX from 'xlsx';
@@ -12,6 +13,7 @@ import {
   hashPassword, verifyPassword, publicUser, getUserById, createSession,
   userFromToken, destroySession, googleAuthUrl, verifyGoogleCode,
   findOrCreateGoogleUser, createGrant, consumeGrant, googleConfigured,
+  verifyClerkToken, findOrCreateClerkUser, clerkConfigured,
 } from './auth.js';
 import { get, all, run } from './db/pg.js';
 import { ping as dbPing } from './db/pg.js';
@@ -26,37 +28,33 @@ import { governmentStats, trainingCentreStats, employerStats, candidateStats } f
 
 const app = express();
 
-const allowedOrigins = [
-  "https://kaushalsetu1.vercel.app"
-];
+// ---- Single CORS implementation (cors package) ----
+// Allowlist = FRONTEND_URL ∪ CORS_ORIGINS (both normalized, no trailing /).
+// At least one of them must be the production frontend origin on Render,
+// otherwise browsers receive no Access-Control-Allow-Origin (the classic
+// "blocked by CORS policy" symptom). Localhost stays allowed for development.
+const allowSet = new Set(
+  [config.frontendUrl, ...config.corsOrigins].map((o) => String(o || '').trim().replace(/\/+$/, '')).filter(Boolean)
+);
+const allowedOrigins = [...allowSet];
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) {
+    origin: (origin, callback) => {
+      // No Origin (curl, Render health checks, server-to-server) → allow.
+      if (!origin || allowedOrigins.includes(origin.replace(/\/+$/, ''))) {
         return callback(null, true);
       }
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("Not allowed by CORS"));
+      return callback(new Error('Not allowed by CORS'));
     },
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   })
 );
-
-app.options(/.*/, cors({
-  origin: "https://kaushalsetu1.vercel.app",
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
-}));
-
-app.use(express.json());
+// NOTE: no app.options() duplicate and no express.json() here — the cors
+// middleware above already answers all preflights, and bodies are parsed by
+// readBody() below (which enforces MAX_BODY with proper 400/413 errors).
 
 const MAX_BODY = () => config.maxUploadBytes + 1024 * 1024;
 
@@ -163,7 +161,7 @@ route('GET', '/api/health', async (req, res) => {
     ok: true, service: 'kaushalsetu-server', phase: '3',
     database: { connected: dbOk, engine: 'postgresql' },
     timestamp: now(),
-    auth: { mode: 'backend', googleConfigured: googleConfigured() },
+    auth: { mode: 'backend', googleConfigured: googleConfigured(), clerkConfigured: clerkConfigured() },
     ai: aiStatus(),
   });
 });
@@ -230,6 +228,22 @@ route('POST', '/api/auth/google/consume', async (req, res, _p, body) => {
   if (!user) return send(res, 400, { error: 'Invalid or expired sign-in grant. Please try again.' });
   const token = await createSession(user.id);
   send(res, 200, { user: publicUser(user), token });
+});
+
+route('POST', '/api/auth/clerk', async (req, res, _p, body) => {
+  // One-time exchange: verify the Clerk session JWT server-side, then issue
+  // a normal backend Bearer token. Afterwards the client uses ONLY the
+  // backend token — per-request auth is unchanged (single session system).
+  const jwt = String(body.token || body.jwt || '');
+  if (!jwt) return send(res, 400, { error: 'Missing Clerk session token.' });
+  try {
+    const identity = await verifyClerkToken(jwt);
+    const { user, isNew } = await findOrCreateClerkUser(identity);
+    const token = await createSession(user.id);
+    send(res, 200, { user: publicUser(user), token, isNew });
+  } catch (e) {
+    send(res, e.status || 401, { error: e.message || 'Clerk sign-in failed.', code: e.code || 'clerk_invalid' });
+  }
 });
 
 route('POST', '/api/demo/session', async (req, res, _p, body) => {
@@ -758,18 +772,9 @@ route('GET', '/api/stats/:role', async (req, res, params) => {
 });
 
 // ---------------- server ----------------
-// ---------------- server ----------------
-
-const server = http.createServer(async (req, res) => {
-  cors(req, res);
-
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
+// All API routes are registered above via route(). Express handles transport,
+// CORS and preflight; the handler below only does routing + bodies.
+app.use(async (req, res) => {
   const url = new URL(
     req.url,
     `http://${req.headers.host || 'localhost'}`
@@ -814,7 +819,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(config.port, config.host, () => {
+app.listen(config.port, config.host, () => {
   console.log(
     `KAUSHALSETU API listening on ${config.host}:${config.port} ` +
     `(PostgreSQL, AI: ${config.aiProvider}, ` +

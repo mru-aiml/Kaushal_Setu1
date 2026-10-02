@@ -6,6 +6,7 @@ import { ROLE_CONFIG, ROLE_LIST } from '../data/roles';
 import { useApp } from '../hooks/AppContext';
 import { useSession } from '../auth/AuthContext';
 import { authService } from '../auth/authService';
+import { signOutClerk } from '../auth/clerk';
 import { Ticker } from '../components/domain';
 import { Toasts } from '../components/ui';
 import ReportModal from '../components/ReportModal';
@@ -26,8 +27,9 @@ export default function AppLayout({ children }) {
   const RoleIcon = iconMap(cur.icon);
   const initials = (user?.name || 'U').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
-  const signOut = () => {
-    authService.signOut();
+  const signOut = async () => {
+    await authService.signOut();
+    await signOutClerk();
     navigate('/login');
   };
 

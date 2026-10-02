@@ -12,6 +12,8 @@ import { GovernmentData, TrainingCentreData, EmployerData, CandidateData } from 
 import Onboarding, { DemoEntry } from './pages/Onboarding';
 import UnauthorizedPage from './pages/Unauthorized';
 import { Contact, Privacy, Terms } from './pages/InfoPages';
+import ClerkBridge from './auth/ClerkBridge';
+import { clerkAvailable } from './auth/clerk';
 import Overview from './pages/Overview';
 import Districts from './pages/Districts';
 import Signals from './pages/Signals';
@@ -79,6 +81,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <AppProvider>
+          {clerkAvailable() && <ClerkBridge />}
           <Routes>
             {/* Public website */}
             <Route path="/" element={<Landing />} />

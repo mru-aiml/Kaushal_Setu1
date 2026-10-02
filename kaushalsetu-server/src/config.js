@@ -25,9 +25,11 @@ const num = (v, d) => {
 export const config = {
   port: num(process.env.PORT, 4000),
   host: process.env.HOST || '0.0.0.0',
+  // Production URLs are safe defaults (public, not secrets); env always wins.
+  // Localhost origins stay allowed so local development works with no .env.
   backendUrl: (process.env.BACKEND_URL || 'https://kaushalsetu-backend-xyyv.onrender.com').replace(/\/$/, ''),
   frontendUrl: (process.env.FRONTEND_URL || 'https://kaushalsetu1.vercel.app').replace(/\/$/, ''),
-  corsOrigins: (process.env.CORS_ORIGINS || "")
+  corsOrigins: (process.env.CORS_ORIGINS || 'https://kaushalsetu1.vercel.app,http://localhost:5173,http://localhost:3000,http://localhost:4173,http://localhost:4174')
   .split(',')
   .map(s => s.trim().replace(/\/$/, ''))
   .filter(Boolean),

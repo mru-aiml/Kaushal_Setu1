@@ -1,6 +1,6 @@
 # KAUSHALSETU backend API (Phase 3)
 
-Zero-dependency Node.js HTTP server (`node:http`) + **PostgreSQL** (`pg` pool, parameterized queries) + `xlsx` for spreadsheet import/export.
+Express + `cors` package + **PostgreSQL** (`pg` pool, parameterized queries) + `xlsx` for spreadsheet import/export. Exactly one CORS implementation (`app.use(cors(...))` in `src/index.js`, allowlist = `FRONTEND_URL` ∪ `CORS_ORIGINS`); preflight is answered by the cors middleware for every route.
 
 ## Production deployment (Render + Vercel)
 
@@ -88,6 +88,7 @@ Copy `.env.example` to `.env` (never commit `.env`):
 | `SQLITE_PATH` | Legacy SQLite file — read-only source for `db:migrate:sqlite` |
 | `PORT`, `BACKEND_URL`, `FRONTEND_URL`, `CORS_ORIGINS` | Server + CORS |
 | `GOOGLE_CLIENT_ID/SECRET` | Google OAuth (optional; sign-in disabled with a clear 503 when unset) |
+| `CLERK_SECRET_KEY` | Clerk auth (optional, backend-only). When set, `POST /api/auth/clerk` exchanges verified Clerk JWTs for backend sessions; when unset, Clerk is fully inert |
 | `AI_PROVIDER/BASE_URL/API_KEY/MODEL` | Backend-only LLM gateway (`none` = honest 503) |
 | `DATA_DIR`, `MAX_UPLOAD_BYTES`, `SESSION_DAYS` | Storage, uploads, sessions |
 
@@ -151,7 +152,15 @@ The SQLite file is preserved as the migration source; PostgreSQL is the source o
 
 ## 12. Google OAuth configuration
 
-Create a Web OAuth client at https://console.cloud.google.com/apis/credentials, set authorized redirect URI to `${BACKEND_URL}/api/auth/google/callback`, put ID + secret in `.env`. New Google users → onboarding; existing → straight to dashboard.
+Create a Web OAuth client at https://console.cloud.google.com/apis/credentials, set authorized redirect URI to `${BACKEND_URL}/api/auth/google/callback`, put ID + secret in `.env`. New Google users → onboarding; existing → straight to dashboard. (Kept working; for new setups prefer Google via Clerk below.)
+
+## 12b. Clerk setup
+
+1. Create an application at https://dashboard.clerk.com → **API Keys**: copy the **Publishable key** (`pk_…`) and **Secret key** (`sk_…`).
+2. Render backend env: set `CLERK_SECRET_KEY` to the secret key (never in frontend code).
+3. Vercel frontend env: set `VITE_CLERK_PUBLISHABLE_KEY` to the publishable key, then redeploy (Vite inlines at build).
+4. (Optional) In the Clerk dashboard → **SSO / Social connections**, enable **Google** instead of maintaining separate `GOOGLE_*` OAuth credentials.
+5. Verify: `GET /api/health` shows `"clerkConfigured":true`; the login page shows Clerk buttons; after Clerk sign-in the bridge exchanges the JWT at `POST /api/auth/clerk` and normal onboarding/dashboard routing applies (new users → role picker, existing → their dashboard).
 
 ## 13. Demo login credentials
 
@@ -168,7 +177,7 @@ Demo sessions from `/demo` are ephemeral and sandboxed (`demo_*` owners excluded
 
 ## 14. Route list (API)
 
-AUTH `POST /api/auth/signup|signin|logout`, `GET /api/auth/google/url`, `GET /api/auth/google/callback`, `POST /api/auth/google/consume`, `POST /api/demo/session` · ME `GET|PUT /api/me`, `GET /api/profile-schema`, `GET|PUT /api/me/profile`, `GET /api/me/resume` · DATA `GET /api/entities`, `GET|POST /api/data/:entity`, `PUT|DELETE /api/data/:entity/:id`, `GET /api/data/:entity/export` · IMPORT `POST /api/import/parse|commit|resume` · AI `POST /api/ai/career-recommendations|curriculum`, `GET .../latest`, `GET /api/ai/status` · CURRICULA `GET|POST /api/curricula`, `PUT|DELETE /api/curricula/:id` · REPORTS `GET /api/reports/catalog`, `GET /api/reports`, `POST /api/reports/generate`, `GET /api/reports/:id/download` · STATS `GET /api/stats/:role` · HEALTH `GET /api/health` (server + database status, engine, timestamp).
+AUTH `POST /api/auth/signup|signin|logout|clerk`, `GET /api/auth/google/url`, `GET /api/auth/google/callback`, `POST /api/auth/google/consume`, `POST /api/demo/session` · ME `GET|PUT /api/me`, `GET /api/profile-schema`, `GET|PUT /api/me/profile`, `GET /api/me/resume` · DATA `GET /api/entities`, `GET|POST /api/data/:entity`, `PUT|DELETE /api/data/:entity/:id`, `GET /api/data/:entity/export` · IMPORT `POST /api/import/parse|commit|resume` · AI `POST /api/ai/career-recommendations|curriculum`, `GET .../latest`, `GET /api/ai/status` · CURRICULA `GET|POST /api/curricula`, `PUT|DELETE /api/curricula/:id` · REPORTS `GET /api/reports/catalog`, `GET /api/reports`, `POST /api/reports/generate`, `GET /api/reports/:id/download` · STATS `GET /api/stats/:role` · HEALTH `GET /api/health` (server + database status, engine, timestamp).
 
 ## 15. Architecture summary
 

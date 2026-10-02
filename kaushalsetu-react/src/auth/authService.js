@@ -236,6 +236,21 @@ export const authService = {
     return session;
   },
 
+  // Clerk exchange: verify the Clerk JWT server-side, receive a normal
+  // backend session. Afterwards the app uses ONLY the backend token.
+  async signInWithClerk(clerkJwt) {
+    const mode = await probeBackend();
+    if (mode !== 'backend') {
+      const err = new Error('Clerk sign-in needs the backend API. Start the KaushalSetu server or use email sign-in.');
+      err.code = 'clerk_unavailable';
+      throw err;
+    }
+    const { user, token } = await apiCall('POST', '/api/auth/clerk', { body: { token: clerkJwt } });
+    const session = { user, token, mode: 'backend' };
+    writeSession(session);
+    return session;
+  },
+
   async assignRole(role) {
     if (!ROLE_IDS.includes(role)) throw new Error('Unknown role.');
     const session = readSession();

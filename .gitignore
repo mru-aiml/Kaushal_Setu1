@@ -3,6 +3,8 @@
 !.env.example
 
 node_modules/
+# runtime report files (regenerable via the API; old ones predate this rule)
+kaushalsetu-server/data/reports/
 .venv/
 venv/
 __pycache__/

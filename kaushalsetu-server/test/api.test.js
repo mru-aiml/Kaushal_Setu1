@@ -256,6 +256,12 @@ test('AI endpoints fail gracefully with 503 when unconfigured (no fake output)',
   assert.equal(r2.status, 503);
 });
 
+test('Clerk exchange fails honestly when unconfigured (no secret set)', async () => {
+  const r = await json('POST', '/api/auth/clerk', { token: 'dummy' });
+  assert.equal(r.status, 503);
+  assert.equal(r.body.code, 'clerk_not_configured');
+});
+
 test('reports: real PDF + CSV download with stored data', async () => {
   let r = await json('POST', '/api/reports/generate', { type: 'skill-demand', filters: {}, format: 'csv' }, govToken);
   assert.equal(r.status, 201);

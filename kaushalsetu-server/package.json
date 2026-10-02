@@ -16,6 +16,7 @@
     "db:migrate:sqlite": "node scripts/migrate-sqlite.js"
   },
   "dependencies": {
+    "@clerk/backend": "^3.22.0",
     "cors": "^2.8.6",
     "express": "^4.22.3",
     "pg": "^8.23.0",

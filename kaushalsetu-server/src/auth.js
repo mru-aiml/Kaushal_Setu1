@@ -127,4 +127,78 @@ export async function consumeGrant(code) {
   return getUserById(g.user_id);
 }
 
+// ---------- Clerk (primary auth when configured; env-gated) ----------
+// Clerk is an identity provider INTO the single backend session system:
+// the frontend exchanges a Clerk session JWT once at POST /api/auth/clerk
+// and receives a normal backend Bearer token. Per-request auth stays
+// unchanged (local session tokens only) — no parallel auth system.
+
+export function clerkConfigured() {
+  return !!process.env.CLERK_SECRET_KEY;
+}
+
+export async function verifyClerkToken(jwt) {
+  if (!clerkConfigured()) {
+    const err = new Error('Clerk authentication is not configured on this server.');
+    err.status = 503;
+    err.code = 'clerk_not_configured';
+    throw err;
+  }
+  const { verifyToken } = await import('@clerk/backend');
+  let claims;
+  try {
+    claims = await verifyToken(jwt, { secretKey: process.env.CLERK_SECRET_KEY });
+  } catch {
+    const err = new Error('Invalid Clerk session. Please sign in again.');
+    err.status = 401;
+    err.code = 'clerk_invalid';
+    throw err;
+  }
+  const emailClaim = String(claims.email || claims.email_address || '').toLowerCase();
+  if (!claims.sub) {
+    const err = new Error('Clerk did not return a usable identity.');
+    err.status = 401;
+    err.code = 'clerk_invalid';
+    throw err;
+  }
+  // Email/display-name are resolved server-side only: JWT claim first, else
+  // the Clerk API looked up by verified sub. Never from the frontend.
+  let email = emailClaim;
+  let name = claims.name || claims.username || '';
+  if (!email || !name) {
+    try {
+      const { createClerkClient } = await import('@clerk/backend');
+      const client = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+      const cu = await client.users.getUser(claims.sub);
+      email = email || String(cu.primaryEmailAddress?.emailAddress || '').toLowerCase();
+      name = name || [cu.firstName, cu.lastName].filter(Boolean).join(' ') || cu.username || '';
+    } catch {
+      /* fall through to validation below */
+    }
+  }
+  if (!email) {
+    const err = new Error('Clerk did not return a usable identity.');
+    err.status = 401;
+    err.code = 'clerk_invalid';
+    throw err;
+  }
+  return { sub: claims.sub, email, name: name || email.split('@')[0] };
+}
+
+export async function findOrCreateClerkUser({ sub, email, name }) {
+  let u = await get('SELECT * FROM users WHERE clerk_id = $1', [sub]);
+  if (u) return { user: u, isNew: !u.onboarded };
+  const existing = await get('SELECT * FROM users WHERE email = $1', [email]);
+  if (existing) {
+    // Link Clerk identity to the existing email account (keeps role/profile).
+    await run('UPDATE users SET clerk_id = $1 WHERE id = $2', [sub, existing.id]);
+    const linked = await getUserById(existing.id);
+    return { user: linked, isNew: !linked.onboarded };
+  }
+  const id = uid('u');
+  await run(`INSERT INTO users (id, email, name, password_hash, provider, clerk_id, role, onboarded, created_at)
+    VALUES ($1, $2, $3, NULL, 'clerk', $4, NULL, FALSE, $5)`, [id, email, name, sub, now()]);
+  return { user: await getUserById(id), isNew: true };
+}
+
 export { googleConfigured };

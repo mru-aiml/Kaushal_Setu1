@@ -74,11 +74,17 @@ function cors(req, res) {
   );
 }
 
-if (req.method === 'OPTIONS') {
-  res.statusCode = 204;
-  res.end();
-  return;
-}
+const server = http.createServer(async (req, res) => {
+  cors(req, res);
+
+  // Handle browser CORS preflight request
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+
+ // Your existing code continues here...
 
 // ===============================
 // CORS — PUT THIS BEFORE ROUTES

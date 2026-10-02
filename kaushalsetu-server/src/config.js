@@ -25,9 +25,9 @@ const num = (v, d) => {
 export const config = {
   port: num(process.env.PORT, 4000),
   host: process.env.HOST || '0.0.0.0',
-  backendUrl: (process.env.BACKEND_URL || 'http://localhost:4000').replace(/\/$/, ''),
-  frontendUrl: (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, ''),
-  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:4173,http://localhost:4174')
+  backendUrl: (process.env.BACKEND_URL || 'https://kaushalsetu-backend-xyyv.onrender.com').replace(/\/$/, ''),
+  frontendUrl: (process.env.FRONTEND_URL || 'https://kaushalsetu1.vercel.app').replace(/\/$/, ''),
+  corsOrigins: (process.env.CORS_ORIGINS ||"")
     .split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean),
   sessionDays: num(process.env.SESSION_DAYS, 30),
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
